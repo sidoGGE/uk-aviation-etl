@@ -1,0 +1,7 @@
+
+
+git add .
+git commit -m "Initial project commit: UK Aviation ETL with Airflow and Docker"
+git branch -M main
+git remote add origin https://github.com/sidoGGE/uk-aviation-etl.git
+git push -u origin main
