@@ -47,7 +47,8 @@ def run_aviation_etl():
     df = pd.DataFrame(raw_data, columns=columns)  # build a DataFrame from raw data
     df = df[['callsign', 'origin_country', 'longitude', 'latitude']]  # select only needed columns
     df['callsign'] = df['callsign'].str.strip()  # remove extra spaces from callsign values
-
+    
+    print(f"✈️ Successfully found {len(df)} flights from OpenSky.")
     # Fetch weather data for each flight and add temperature and description.
     df['temperature'] = None  # initialize temperature column
     df['weather_desc'] = None  # initialize weather description column
@@ -57,18 +58,22 @@ def run_aviation_etl():
             try:
                 w_url = f"https://api.openweathermap.org/data/2.5/weather?lat={row['latitude']}&lon={row['longitude']}&appid={weather_api_key}&units=metric"  # build weather API URL
                 w_res = session.get(w_url, timeout=5)  # call OpenWeatherMap API
-                if w_res.status_code == 200:  # if the request succeeded
-                    w_data = w_res.json()  # parse weather JSON
-                    df.at[index, 'temperature'] = w_data['main']['temp']  # save temperature
-                    df.at[index, 'weather_desc'] = w_data['weather'][0]['description']  # save weather description
-                time.sleep(0.1)  # small delay to avoid API rate limit
+                if w_res.status_code == 200:
+                   w_data = w_res.json()
+                   df.at[index, 'temperature'] = w_data['main']['temp']
+                   df.at[index, 'weather_desc'] = w_data['weather'][0]['description']
+                else:
+                   print(f"⚠️ Weather API failed with code: {w_res.status_code} - {w_res.text}")
+                   time.sleep(0.1)  # small delay to avoid API rate limit
             except Exception as e:  # catch any request or parsing errors
                 logging.warning(f"Error fetching weather for callsign {row['callsign']}: {e}")  # log the warning
                 continue  # skip this row and continue looping
 
     # Clean the data and keep only rows with fetched temperature values.
     final_df = df.dropna(subset=['temperature']).copy()  # drop rows without temperature data
+    final_df['ingest_time'] = pd.Timestamp.now()
     
+    print(f"💾 Sending {len(final_df)} rows to the database.")
     # Add ingest timestamp so we know when each row was stored.
     final_df['ingest_time'] = pd.Timestamp.now()  # add current timestamp column
     
