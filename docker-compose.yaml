@@ -1,0 +1,84 @@
+version: "3.9"
+
+services:
+  # Airflow init service (runs once to initialize the metadata database and create the admin user)
+  # Sensitive credentials are loaded from .env rather than hardcoded in this file.
+  airflow-init:
+    image: apache/airflow:2.7.1
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      # Use values from .env to connect Airflow to Postgres
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-db}:${DB_PORT:-5432}/${DB_NAME:-uk_aviation_db}
+    command: bash -c "airflow db init && airflow users create --username admin --password admin_password --firstname Admin --lastname User --role Admin --email admin@admin.com"
+  db:
+    image: postgres:15
+    container_name: aviation_postgres
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DB_USER}  # database user name loaded from .env
+      POSTGRES_PASSWORD: ${DB_PASSWORD}  # database password loaded from .env
+      POSTGRES_DB: ${DB_NAME:-uk_aviation_db}  # database name loaded from .env or use default
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  # Database administration UI (pgAdmin)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: aviation_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8081:80"
+    depends_on:
+      - db
+  airflow-webserver:
+    image: apache/airflow:2.7.1
+    container_name: aviation_airflow_web
+    restart: always
+    # Load environment variables from .env so Airflow connects to the database securely
+    env_file:
+      - .env
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+  #   - ./dbt_project:/opt/airflow/dbt_project
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-db}:${DB_PORT:-5432}/${DB_NAME:-uk_aviation_db}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET__KEY=sido_1234
+      - _PIP_ADDITIONAL_REQUIREMENTS=pandas requests sqlalchemy psycopg2-binary dbt-postgres
+    ports:
+      - "8080:8080"
+    depends_on:
+      - airflow-init
+    command: webserver
+  airflow-scheduler:
+    image: apache/airflow:2.7.1
+    container_name: aviation_airflow_scheduler
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+  #   - ./dbt_project:/opt/airflow/dbt_project
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-db}:${DB_PORT:-5432}/${DB_NAME:-uk_aviation_db}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET__KEY=sido_1234
+      - _PIP_ADDITIONAL_REQUIREMENTS=pandas requests sqlalchemy psycopg2-binary dbt-postgres
+    depends_on:
+      - airflow-init
+    command: scheduler
+volumes:
+  postgres_data:
